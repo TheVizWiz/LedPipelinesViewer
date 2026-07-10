@@ -17,6 +17,14 @@ you never need this.
 - [PlatformIO Core](https://platformio.org/install/cli) (`pio`)
 - A C++ toolchain (Apple clang / gcc). No CMake required.
 
+### Windows
+
+The viewer builds with the GCC/Clang flag set (`-std=c++17`, `-pthread`), so on Windows use a **GCC toolchain
+(MinGW-w64)**, not MSVC. Install it (e.g. via [MSYS2](https://www.msys2.org/) `pacman -S mingw-w64-x86_64-gcc`, or
+[w64devkit](https://github.com/skeeto/w64devkit)) and make sure its `g++` is on `PATH` when you run `pio`. The build
+links `ws2_32`/`wsock32` automatically on Windows (see `scripts/windows_flags.py`) so cpp-httplib's networking resolves;
+no manual flags needed. MSVC (`cl.exe`) is not supported — it rejects the GCC-style flags.
+
 ## Quickstart
 
 ```sh
