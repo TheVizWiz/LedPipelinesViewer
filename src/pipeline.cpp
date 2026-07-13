@@ -5,24 +5,27 @@
 // below streams every frame to the browser at http://127.0.0.1:8420.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-#include "Arduino.h"       // viewer host stub
-#include "FastLED.h"       // viewer host stub
-#include "LedPipelines.h"  // the LedPipelines library (pulled via lib_deps)
-#include "viewer/Runner.h" // viewer runtime: startServer()
+#include "Arduino.h"           // viewer host stub (String, millis/micros/delay, Serial)
+#include "LedPipelines.h"      // the LedPipelines library (pulled via lib_deps)
+#include "viewer/Runner.h"     // viewer runtime: startServer()
+#include "viewer/ViewerOutput.h" // the viewer's LedOutput backend
 
 using namespace ledpipelines;
 using namespace ledpipelines::effects;
 
-// The backing pixel buffer. Size it to your strip; the array is what addLeds()
-// windows into.
-CRGB leds[100];
+#define LED_COUNT 100
+
+// The viewer's render backend. Declare your strip(s) on it, register it with setOutput(), and every rendered frame is
+// published to the browser. No backing pixel array / pin / chipset - the viewer doesn't drive hardware.
+viewer::ViewerOutput output;
 
 LedPipelineStage *pipeline;
 
-// setup(): register strips FIRST, then initialize() (it reads
-// FastLED.count()/size()), then build the pipeline.
+// setup(): declare strips on the output and register it FIRST, then initialize() (it reads the topology from the
+// registered output), then build the pipeline.
 void buildPipeline() {
-  FastLED.addLeds<WS2812B, 5, GRB>(leds, 100);
+  output.addStrip(LED_COUNT);
+  ledpipelines::setOutput(&output);
 
   ledpipelines::initialize();
   ledpipelines::setMaxRefreshRate(60);
@@ -30,23 +33,69 @@ void buildPipeline() {
   // A 10-pixel white segment sweeping across the strip and looping - exercises
   // the real-clock timing path.
 
-  auto rgb = SeriesLedPipeline::Builder()
-  .addStage(
-    SolidSegment::Builder(CRGB::Red, 10).wrap(TimeBox::Builder(1000))
-    )
-  .addStage(
-  SolidSegment::Builder(CRGB::Lime, 10).wrap(TimeBox::Builder(1000))
-  )
-  .addStage(
-  SolidSegment::Builder(CRGB::Blue, 10).wrap(TimeBox::Builder(1000))
-  )
-  .wrap(Loop::Builder());
+  // auto ball = std::shared_ptr<LedPipelineStage>(
+  //     HSVGradient::Builder(0, 9)
+  //         .runtimeMs(8000)
+  //         .startGradient(FHSV(0, 1, 1), FHSV(120, 1, 1))
+  //         .endGradient(FHSV(360, 1, 1), FHSV(480, 1, 1))
+  //         .wrap(Loop::Builder())
+  //         .block()
+  //         .build());
+  //
+  // pipeline =
+  //     SeriesLedPipeline::Builder()
+  //         .addStage(Shared::Builder(ball)
+  //                       .wrap(Moving::Builder(2000)
+  //                                 .startPosition(0)
+  //                                 .endPosition(80)
+  //                                 .smoothingFunction(
+  //                                     SmoothingFunction::INVERSE_QUADRATIC))
+  //                       .timebox(2000))
+  //         .addStage(
+  //             Shared::Builder(ball)
+  //                 .wrap(Moving::Builder(2000)
+  //                           .startPosition(80)
+  //                           .endPosition(0)
+  //                           .smoothingFunction(SmoothingFunction::QUADRATIC))
+  //                 .timebox(2000))
+  //         .timebox(4000)
+  //         .loop()
+  //         .build();
 
-  pipeline =  rgb
-                 .wrap(Repeat::Builder(100))
-                 .wrap(Moving::Builder(21000).startPosition(-20).endPosition(80))
-                 .wrap(Loop::Builder())
-                 .build();
+  auto particle = SolidSegment::Builder(RGBA::Orange, 1);
+
+  auto factory = [=]() -> LedPipelineStage * {
+    auto particle = SolidSegment::Builder(RGBA::Orange, 1);
+
+    auto in = particle.wrap(RandomFadeIn::Builder(5000))
+                  .minRuntimeMs(1000)
+                  .samplingFunction(SamplingFunction::CENTERED)
+                  .terminateOnComplete(true);
+
+    auto wait = particle.wrap(RandomTimeBox::Builder(10000)
+                                  .minRuntimeMs(1000)
+                                  .samplingFunction(SamplingFunction::CENTERED)
+                                  .terminateOnComplete(true));
+
+    auto out = particle.wrap(RandomFadeOut::Builder(5000))
+                   .minRuntimeMs(1000)
+                   .samplingFunction(SamplingFunction::CENTERED)
+                   .terminateOnComplete(true);
+
+    return SeriesLedPipeline::Builder()
+        .addStage(in)
+        .addStage(wait)
+        .addStage(out)
+        .wrap(RandomShift::Builder(static_cast<float>(TemporaryLedData::size))
+                  .minOffset(0)
+                  .samplingFunction(SamplingFunction::UNIFORM))
+        .build();
+  };
+
+  auto spawner =
+      TimedSpawner::Builder(factory, 500).maxChildren(50).keepOldOnSpawn(true);
+
+  pipeline = spawner.build();
 
   pipeline->reset();
 }
@@ -56,8 +105,8 @@ int main() {
   buildPipeline();
 
   // run() self-rate-limits to setMaxRefreshRate; each rendered frame's
-  // FastLED.show() pushes pixels to the browser. The small real sleep keeps the
-  // CPU idle between frames.
+  // output.show() publishes pixels to the browser. The small real sleep keeps
+  // the CPU idle between frames.
   while (true) {
     pipeline->run();
     delay(1);

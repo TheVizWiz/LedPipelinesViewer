@@ -1,13 +1,12 @@
-// Definitions for the native FastLED/Arduino stubs: the FastLED and Serial globals, plus REAL wall-clock timing.
-// Compiled into the viewer build so the library's globals resolve at link time. See FastLED.h / Arduino.h.
+// Definitions for the native Arduino stub: the Serial global plus REAL wall-clock timing. Compiled into the viewer
+// build so the library's Arduino-side globals resolve at link time. See Arduino.h. (The viewer no longer stubs
+// FastLED - LedPipelines renders through viewer::ViewerOutput, an ledpipelines::LedOutput implementation.)
 
 #include <chrono>
 #include <thread>
 
-#include "FastLED.h"
 #include "Arduino.h"
 
-FakeController FastLED;
 FakeSerial Serial;
 
 // Real monotonic clock, unlike the library's test stub (which returns a fake counter). The library's refresh-rate

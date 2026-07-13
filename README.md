@@ -4,10 +4,14 @@ A desktop previewer for the [LedPipelines](https://registry.platformio.org/libra
 library. Write a pipeline in C++ exactly as you would in an Arduino sketch, build, and watch it animate live in your
 browser as a wrapped grid of pixels — no hardware needed.
 
-It works by compiling LedPipelines natively against host-side `FastLED.h` / `Arduino.h` stubs. The library is
-unchanged; the only difference from hardware is that `FastLED.show()` streams each rendered frame to the browser
-(over Server-Sent Events) instead of latching physical LEDs, and the clock is real wall-clock time so timed effects
-animate at their true speed. What you see is the exact RGB the physical LEDs would receive.
+It works by compiling LedPipelines natively and rendering through `viewer::ViewerOutput` — an implementation of the
+library's `ledpipelines::LedOutput` backend interface. The library is unchanged; the only difference from hardware is
+that instead of latching physical LEDs, the backend streams each rendered frame to the browser (over Server-Sent
+Events), and the clock is real wall-clock time so timed effects animate at their true speed. What you see is the exact
+RGB the physical LEDs would receive.
+
+(The viewer used to stub out `FastLED.h`; since LedPipelines 0.2.0 decoupled from FastLED behind the `LedOutput`
+interface, the viewer is just a backend implementation and needs no FastLED at all.)
 
 This is a standalone tool: it depends on LedPipelines, not the other way around. If you only run effects on hardware,
 you never need this.
@@ -22,7 +26,7 @@ you never need this.
 The viewer builds with the GCC/Clang flag set (`-std=c++17`, `-pthread`), so on Windows use a **GCC toolchain
 (MinGW-w64)**, not MSVC. Install it (e.g. via [MSYS2](https://www.msys2.org/) `pacman -S mingw-w64-x86_64-gcc`, or
 [w64devkit](https://github.com/skeeto/w64devkit)) and make sure its `g++` is on `PATH` when you run `pio`. The build
-links `ws2_32`/`wsock32` automatically on Windows (see `scripts/windows_flags.py`) so cpp-httplib's networking resolves;
+links `ws2_32`/`wsock32` automatically on Windows (see `scripts/build_setup.py`) so cpp-httplib's networking resolves;
 no manual flags needed. MSVC (`cl.exe`) is not supported — it rejects the GCC-style flags.
 
 ## Quickstart
@@ -47,18 +51,20 @@ pio run                       # compiles only
 
 ## Writing a pipeline
 
-`src/pipeline.cpp` is the one file you edit — the viewer's analog of an Arduino `setup()`:
+`src/pipeline.cpp` is the one file you edit — the viewer's analog of an Arduino `setup()`. Declare your strip(s) on a
+`ViewerOutput`, register it with `setOutput()`, then `initialize()`:
 
 ```cpp
-CRGB leds[100];
+viewer::ViewerOutput output;   // the viewer's LedOutput backend (no pin/chipset — it doesn't drive hardware)
 LedPipelineStage *pipeline;
 
 void buildPipeline() {
-    FastLED.addLeds<WS2812B, 5, GRB>(leds, 100);   // register strip(s) FIRST
-    ledpipelines::initialize();                    // then initialize (reads strip count/sizes)
+    output.addStrip(100);                          // declare strip(s) FIRST
+    ledpipelines::setOutput(&output);              // register the backend
+    ledpipelines::initialize();                    // then initialize (reads strip count/sizes from the output)
     ledpipelines::setMaxRefreshRate(60);
 
-    pipeline = SolidSegment::Builder(CRGB::White, 10)
+    pipeline = SolidSegment::Builder(RGBA::White, 10)
                    .wrap(Moving::Builder(4000).startPosition(0).endPosition(90))
                    .wrap(Loop::Builder())
                    .build();
@@ -66,8 +72,8 @@ void buildPipeline() {
 }
 ```
 
-Register multiple strips with the offset overload (`addLeds<...>(leds, offset, count)`); the browser draws one row
-block per strip. Order matters: call `addLeds(...)` before `ledpipelines::initialize()`.
+Register multiple strips by calling `output.addStrip(count)` once per strip; the browser draws one row block per strip.
+Order matters: call `addStrip(...)` and `setOutput(...)` before `ledpipelines::initialize()`.
 
 ## Testing against a newer LedPipelines
 
@@ -76,8 +82,10 @@ newer published version, bump the version there (or run `pio pkg update`) and re
 
 ## How it fits together
 
-- `stubs/FastLED.h`, `stubs/Arduino.h`, `stubs/stubs_impl.cpp` — host substitutes for the hardware. `FastLED.show()`
-  publishes a frame; `micros()`/`millis()` are real `std::chrono` time.
+- `src/viewer/ViewerOutput.h` — the `ledpipelines::LedOutput` backend: each frame's pixels are packed and published to
+  the browser on `show()`, instead of latching hardware.
+- `stubs/Arduino.h`, `stubs/stubs_impl.cpp` — host substitutes for the Arduino surface the library expects (`String`,
+  `Serial`, and timing): `micros()`/`millis()` are real `std::chrono` wall-clock time. No FastLED stub is needed.
 - `src/viewer/FrameQueue.*` — a coalescing single-slot mailbox between the render loop and the server, so the render
   loop never blocks on the browser and slow clients just drop frames.
 - `src/viewer/Server.*` — an embedded HTTP server (vendored [`cpp-httplib`](https://github.com/yhirose/cpp-httplib))
