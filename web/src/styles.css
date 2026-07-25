@@ -1,0 +1,116 @@
+:root {
+	color-scheme: dark;
+	/* Running-state accent colors, shared by the tree view. */
+	--run-color: #f0a020;      /* RUNNING -> orange highlight */
+	--done-color: #4a5568;     /* DONE -> dimmed */
+	--idle-color: #2a2f37;     /* NOT_STARTED -> neutral */
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: #0b0d10;
+	color: #c7ccd1;
+	font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* The app fills the viewport and does NOT scroll the document itself. The bar is a fixed header; each view's content
+   scrolls inside its own region (.view-scroll). This is what keeps the scrollbar stable: the pipeline tree's height
+   oscillates every frame as a spawner's children come and go, and if that drove the DOCUMENT height, the page's scroll
+   position would clamp/jump every frame (you could never scroll down and stay there). Confining the scroll to an
+   inner region of stable, viewport-derived height decouples the scrollbar geometry from the content thrashing. */
+html, body, #root { height: 100%; }
+#root { display: flex; flex-direction: column; }
+
+/* --- top bar / tabs --- */
+.bar {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 16px 16px 14px;
+	background: #0b0d10;
+	z-index: 1;
+}
+
+/* The scrollable content region for a view - fills the space under the bar and scrolls internally. */
+.view-scroll {
+	flex: 1 1 auto;
+	overflow: auto;
+	padding: 0 16px 16px;
+	/* Disable browser scroll anchoring. The tree re-renders every frame and a spawner's children (early in the DOM)
+	   are removed/replaced constantly; Chrome's scroll anchoring tries to keep a now-removed anchor element in view and
+	   jumps the scroll position (snapping toward the top). Turning it off keeps scrollTop where the user put it. */
+	overflow-anchor: none;
+}
+
+.status { padding: 4px 8px; border-radius: 4px; }
+.status.live { background: #10331d; color: #6ee7a0; }
+.status.connecting, .status.disconnected { background: #3a1414; color: #f19b9b; }
+
+.tabs { display: flex; gap: 4px; }
+.tab {
+	padding: 4px 12px;
+	border-radius: 4px;
+	background: transparent;
+	color: #c7ccd1;
+	border: 1px solid #2a2f37;
+	cursor: pointer;
+	font: inherit;
+}
+.tab.active { background: #1b2027; border-color: #3a4250; }
+
+.control { display: flex; align-items: center; gap: 8px; }
+.control input[type=range] { width: 220px; }
+.control .value { width: 4.5ch; text-align: right; opacity: 0.7; }
+
+/* --- pixel view --- */
+.strip { margin-bottom: 28px; }
+.strip-label { margin-bottom: 8px; opacity: 0.6; }
+.pixels { display: flex; flex-wrap: wrap; gap: 6px; }
+.px {
+	width: var(--px-size, 14px);
+	height: var(--px-size, 14px);
+	border-radius: 2px;
+	background: #000;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* --- tree view --- */
+.tree { padding: 8px 0; }
+
+/* A stage box. Wrappers/pipelines nest their children inside via .node-children. */
+.node {
+	border: 1px solid #3a4250;
+	border-radius: 6px;
+	padding: 8px;
+	margin: 4px 0;
+	background: #12151a;
+	display: inline-block;
+	vertical-align: top;
+}
+
+/* Running-state coloring applied to the box border + a faint fill. */
+.node.run-RUNNING { border-color: var(--run-color); box-shadow: 0 0 0 1px var(--run-color), 0 0 12px -2px var(--run-color); }
+.node.run-DONE { border-color: var(--done-color); opacity: 0.6; }
+.node.run-NOT_STARTED { border-color: var(--idle-color); }
+
+.node-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.node-type { font-weight: 600; color: #e6eaee; }
+.node-id { opacity: 0.4; font-size: 11px; }
+.node-running { margin-left: auto; font-size: 11px; padding: 1px 6px; border-radius: 3px; }
+.node-running.run-RUNNING { background: var(--run-color); color: #1a1206; }
+.node-running.run-DONE { background: var(--done-color); color: #cbd3dd; }
+.node-running.run-NOT_STARTED { background: var(--idle-color); color: #9aa3ad; }
+
+/* Config + state key/value rows inside a box. */
+.node-fields { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; font-size: 12px; }
+.node-fields .k { opacity: 0.55; }
+.node-fields .v { color: #d7dce1; word-break: break-word; }
+.node-fields .k.state { color: var(--run-color); opacity: 0.8; }
+
+/* Children/inner: laid out as nested boxes. Children of a pipeline (and a spawner's live children) sit side by side and
+   wrap to fill the available width. */
+.node-children { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 6px; border-top: 1px dashed #2a2f37; }
+.node-inner { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #2a2f37; }

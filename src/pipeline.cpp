@@ -5,9 +5,10 @@
 // below streams every frame to the browser at http://127.0.0.1:8420.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-#include "Arduino.h"           // viewer host stub (String, millis/micros/delay, Serial)
-#include "LedPipelines.h"      // the LedPipelines library (pulled via lib_deps)
-#include "viewer/Runner.h"     // viewer runtime: startServer()
+#include "Arduino.h" // viewer host stub (String, millis/micros/delay, Serial)
+#include "LedPipelines.h"  // the LedPipelines library (pulled via lib_deps)
+#include "viewer/PipelineQueue.h" // publishes the pipeline's serialized JSON to the browser
+#include "viewer/Runner.h" // viewer runtime: startServer()
 #include "viewer/ViewerOutput.h" // the viewer's LedOutput backend
 
 using namespace ledpipelines;
@@ -15,14 +16,16 @@ using namespace ledpipelines::effects;
 
 #define LED_COUNT 100
 
-// The viewer's render backend. Declare your strip(s) on it, register it with setOutput(), and every rendered frame is
-// published to the browser. No backing pixel array / pin / chipset - the viewer doesn't drive hardware.
+// The viewer's render backend. Declare your strip(s) on it, register it with
+// setOutput(), and every rendered frame is published to the browser. No backing
+// pixel array / pin / chipset - the viewer doesn't drive hardware.
 viewer::ViewerOutput output;
 
 LedPipelineStage *pipeline;
 
-// setup(): declare strips on the output and register it FIRST, then initialize() (it reads the topology from the
-// registered output), then build the pipeline.
+// setup(): declare strips on the output and register it FIRST, then
+// initialize() (it reads the topology from the registered output), then build
+// the pipeline.
 void buildPipeline() {
   output.addStrip(LED_COUNT);
   ledpipelines::setOutput(&output);
@@ -36,8 +39,8 @@ void buildPipeline() {
   // auto ball = std::shared_ptr<LedPipelineStage>(
   //     HSVGradient::Builder(0, 9)
   //         .runtimeMs(8000)
-  //         .startGradient(FHSV(0, 1, 1), FHSV(120, 1, 1))
-  //         .endGradient(FHSV(360, 1, 1), FHSV(480, 1, 1))
+  //         .startGradient(FHSVA(0, 1, 1), FHSVA(120, 1, 1))
+  //         .endGradient(FHSVA(360, 1, 1), FHSVA(480, 1, 1))
   //         .wrap(Loop::Builder())
   //         .block()
   //         .build());
@@ -67,17 +70,17 @@ void buildPipeline() {
   auto factory = [=]() -> LedPipelineStage * {
     auto particle = SolidSegment::Builder(RGBA::Orange, 1);
 
-    auto in = particle.wrap(RandomFadeIn::Builder(5000))
+    auto in = particle.wrap(RandomFadeIn::Builder(2000))
                   .minRuntimeMs(1000)
                   .samplingFunction(SamplingFunction::CENTERED)
                   .terminateOnComplete(true);
 
-    auto wait = particle.wrap(RandomTimeBox::Builder(10000)
+    auto wait = particle.wrap(RandomTimeBox::Builder(2000)
                                   .minRuntimeMs(1000)
                                   .samplingFunction(SamplingFunction::CENTERED)
                                   .terminateOnComplete(true));
 
-    auto out = particle.wrap(RandomFadeOut::Builder(5000))
+    auto out = particle.wrap(RandomFadeOut::Builder(2000))
                    .minRuntimeMs(1000)
                    .samplingFunction(SamplingFunction::CENTERED)
                    .terminateOnComplete(true);
@@ -88,12 +91,13 @@ void buildPipeline() {
         .addStage(out)
         .wrap(RandomShift::Builder(static_cast<float>(TemporaryLedData::size))
                   .minOffset(0)
-                  .samplingFunction(SamplingFunction::UNIFORM))
+                  .samplingFunction(SamplingFunction::UNIFORM)
+                  .useWholePixels(true))
         .build();
   };
 
   auto spawner =
-      TimedSpawner::Builder(factory, 500).maxChildren(50).keepOldOnSpawn(true);
+      TimedSpawner::Builder(factory, 1000).maxChildren(50).keepOldOnSpawn(true);
 
   pipeline = spawner.build();
 
@@ -109,6 +113,10 @@ int main() {
   // the CPU idle between frames.
   while (true) {
     pipeline->run();
+    // Publish the pipeline's structure + live state each iteration, so the tree view reflects the same moment the
+    // pixels do. toJson(true) walks the whole stage tree; PipelineQueue coalesces, so if the browser can't keep up it
+    // simply drops intermediate snapshots rather than backing up the loop.
+    viewer::PipelineQueue::instance().publish(pipeline->toJson(true));
     delay(1);
   }
 }
