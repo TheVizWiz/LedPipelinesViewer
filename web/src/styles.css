@@ -109,6 +109,12 @@ html, body, #root { height: 100%; }
 .node-fields .k { opacity: 0.55; }
 .node-fields .v { color: #d7dce1; word-break: break-word; }
 .node-fields .k.state { color: var(--run-color); opacity: 0.8; }
+/* Small tag marking a randomized/set config value (a non-constant Value<T> provider), so it stands out from constants. */
+.provider-kind {
+	display: inline-block; margin-right: 5px; padding: 0 5px; border-radius: 3px;
+	font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em;
+	background: rgba(240, 160, 32, 0.18); color: var(--run-color);
+}
 
 /* Children/inner: laid out as nested boxes. Children of a pipeline (and a spawner's live children) sit side by side and
    wrap to fill the available width. */

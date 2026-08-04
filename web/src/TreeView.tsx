@@ -6,7 +6,8 @@ import type { PipelineEvent, StageNode, StageState } from './types.ts';
 const STRUCTURAL_KEYS = new Set(['type', 'id', 'state', 'stage', 'children']);
 
 // Format a serialized value for display. Colors ({r,g,b,a}) and HSVA ({h,s,v,a}) render as compact swatches/tuples;
-// everything else falls back to a JSON-ish string.
+// everything else falls back to a JSON-ish string. Used for STATE fields, which are bare resolved values (sampledColor,
+// sampledRuntimeMs, ...); config fields are provider objects and go through ProviderValue instead.
 function formatValue(value: unknown): string {
 	if (value === null || value === undefined) return '—';
 	if (typeof value === 'object') {
@@ -27,29 +28,90 @@ function swatch(value: unknown): string | null {
 	return null;
 }
 
+// A small inline color chip. Used by ProviderValue for color-typed recipe values.
+function Swatch({ css }: { css: string }) {
+	return (
+		<span style={{
+			display: 'inline-block', width: 10, height: 10, borderRadius: 2,
+			background: css, marginRight: 4, verticalAlign: 'middle',
+			boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.2)',
+		}} />
+	);
+}
+
+// A provider object is any serialized Value<T>: { provider: "<kind>", ...kind-specific fields }. Every config field is
+// now one of these (constant, randomColor, randomHsvColor, randomHsva, randomRange, randomSet). Detected by the
+// presence of a string "provider" key.
+function isProvider(v: unknown): v is Record<string, unknown> & { provider: string } {
+	return !!v && typeof v === 'object' && typeof (v as Record<string, unknown>).provider === 'string';
+}
+
+// Render one bare value (used inside providers): a color renders as a swatch + tuple, everything else as text.
+function BareValue({ value }: { value: unknown }) {
+	const sw = swatch(value);
+	return <>{sw && <Swatch css={sw} />}{formatValue(value)}</>;
+}
+
+// Render a provider-tagged config value (a serialized Value<T> recipe). A constant shows its wrapped value directly; the
+// random providers show their bounds/options with a small "kind" tag so a randomized input reads at a glance. Unknown
+// provider kinds fall back to raw JSON so nothing is silently dropped.
+function ProviderValue({ field }: { field: Record<string, unknown> }) {
+	const kind = field.provider as string;
+	const tag = (label: string) => <span className="provider-kind">{label}</span>;
+
+	switch (kind) {
+		case 'constant':
+			return <BareValue value={field.value} />;
+		case 'randomColor':
+		case 'randomHsvColor':
+		case 'randomHsva':
+			return (
+				<>
+					{tag('random')}
+					<BareValue value={field.min} /> → <BareValue value={field.max} />
+				</>
+			);
+		case 'randomRange': {
+			const sampling = field.samplingFunction;
+			return (
+				<>
+					{tag('random')}
+					{formatValue(field.min)}–{formatValue(field.max)}
+					{sampling && sampling !== 'UNIFORM' ? ` (${sampling})` : ''}
+				</>
+			);
+		}
+		case 'randomSet': {
+			const options = (field.options as unknown[]) ?? [];
+			return (
+				<>
+					{tag('set')}
+					{options.map((opt, i) => (
+						<span key={i}>{i > 0 ? ', ' : ''}<BareValue value={opt} /></span>
+					))}
+				</>
+			);
+		}
+		default:
+			return <>{JSON.stringify(field)}</>;
+	}
+}
+
 function ConfigFields({ node }: { node: StageNode }) {
 	const entries = Object.entries(node).filter(([k]) => !STRUCTURAL_KEYS.has(k));
 	if (entries.length === 0) return null;
 	return (
 		<div className="node-fields">
-			{entries.map(([k, v]) => {
-				const sw = swatch(v);
-				return (
-					<>
-						<span className="k" key={k + ':k'}>{k}</span>
-						<span className="v" key={k + ':v'}>
-							{sw && (
-								<span style={{
-									display: 'inline-block', width: 10, height: 10, borderRadius: 2,
-									background: sw, marginRight: 6, verticalAlign: 'middle',
-									boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.2)',
-								}} />
-							)}
-							{formatValue(v)}
-						</span>
-					</>
-				);
-			})}
+			{entries.map(([k, v]) => (
+				<>
+					<span className="k" key={k + ':k'}>{k}</span>
+					<span className="v" key={k + ':v'}>
+						{/* Config fields are provider objects (serialized Value<T>); older/plain values still render via
+						    the bare formatter so nothing regresses. */}
+						{isProvider(v) ? <ProviderValue field={v} /> : <BareValue value={v} />}
+					</span>
+				</>
+			))}
 		</div>
 	);
 }

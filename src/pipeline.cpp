@@ -6,9 +6,9 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 #include "Arduino.h" // viewer host stub (String, millis/micros/delay, Serial)
-#include "LedPipelines.h"  // the LedPipelines library (pulled via lib_deps)
+#include "LedPipelines.h" // the LedPipelines library (pulled via lib_deps)
 #include "viewer/PipelineQueue.h" // publishes the pipeline's serialized JSON to the browser
-#include "viewer/Runner.h" // viewer runtime: startServer()
+#include "viewer/Runner.h"       // viewer runtime: startServer()
 #include "viewer/ViewerOutput.h" // the viewer's LedOutput backend
 
 using namespace ledpipelines;
@@ -68,30 +68,32 @@ void buildPipeline() {
   auto particle = SolidSegment::Builder(RGBA::Orange, 1);
 
   auto factory = [=]() -> LedPipelineStage * {
-    auto particle = SolidSegment::Builder(RGBA::Orange, 1);
+    auto particle =
+        SolidSegment::Builder(RGBA::Orange, 1)
+            .timebox(RandomRange<u_long>(0, 1000, SamplingFunction::CENTERED))
+            .shared();
 
-    auto in = particle.wrap(RandomFadeIn::Builder(2000))
-                  .minRuntimeMs(1000)
-                  .samplingFunction(SamplingFunction::CENTERED)
-                  .terminateOnComplete(true);
+    auto in = particle.wrap(
+        FadeIn::Builder(
+            RandomRange<u_long>(1000, 2000, SamplingFunction::CENTERED))
+            .terminateOnComplete(true));
 
-    auto wait = particle.wrap(RandomTimeBox::Builder(2000)
-                                  .minRuntimeMs(1000)
-                                  .samplingFunction(SamplingFunction::CENTERED)
-                                  .terminateOnComplete(true));
+    auto wait = particle.wrap(
+        TimeBox::Builder(
+            RandomRange<u_long>(1000, 2000, SamplingFunction::CENTERED))
+            .terminateOnComplete(true));
 
-    auto out = particle.wrap(RandomFadeOut::Builder(2000))
-                   .minRuntimeMs(1000)
-                   .samplingFunction(SamplingFunction::CENTERED)
-                   .terminateOnComplete(true);
+    auto out = particle.wrap(
+        FadeOut::Builder(
+            RandomRange<u_long>(1000, 2000, SamplingFunction::CENTERED))
+            .terminateOnComplete(true));
 
     return SeriesLedPipeline::Builder()
         .addStage(in)
         .addStage(wait)
         .addStage(out)
-        .wrap(RandomShift::Builder(static_cast<float>(TemporaryLedData::size))
-                  .minOffset(0)
-                  .samplingFunction(SamplingFunction::UNIFORM)
+        .wrap(Shift::Builder(RandomRange<float>(0, TemporaryLedData::size,
+                                                SamplingFunction::UNIFORM))
                   .useWholePixels(true))
         .build();
   };
@@ -113,8 +115,9 @@ int main() {
   // the CPU idle between frames.
   while (true) {
     pipeline->run();
-    // Publish the pipeline's structure + live state each iteration, so the tree view reflects the same moment the
-    // pixels do. toJson(true) walks the whole stage tree; PipelineQueue coalesces, so if the browser can't keep up it
+    // Publish the pipeline's structure + live state each iteration, so the tree
+    // view reflects the same moment the pixels do. toJson(true) walks the whole
+    // stage tree; PipelineQueue coalesces, so if the browser can't keep up it
     // simply drops intermediate snapshots rather than backing up the loop.
     viewer::PipelineQueue::instance().publish(pipeline->toJson(true));
     delay(1);
